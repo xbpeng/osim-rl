@@ -3,6 +3,7 @@ import argparse
 import tensorflow as tf
 
 from osim.env import arm
+from osim.env import osim 
 import ppo_agent
 
 def parse_args():
@@ -16,11 +17,12 @@ def parse_args():
     return args
 
 def build_env():
-    env = arm.Arm2DEnv(args.visualize)
+    env = arm.Arm2DVecEnv(args.visualize)
+    #env = osim.L2M2019Env(args.visualize)
     return env
 
-def build_agent(env, sess):
-    agent = ppo_agent.PPOAgent(env, sess)
+def build_agent(env, sess, graph):
+    agent = ppo_agent.PPOAgent(env, sess, graph)
     return agent
 
 def main():
@@ -30,7 +32,7 @@ def main():
     env = build_env()
     graph = tf.Graph()
     sess = tf.Session(graph=graph)
-    agent = build_agent(env, sess)
+    agent = build_agent(env, sess, graph)
 
     agent.train()
 

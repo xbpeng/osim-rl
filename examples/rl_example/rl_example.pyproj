@@ -26,6 +26,7 @@
     <InterpreterReference Include="Global|VisualStudio|opensim-rl" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="rl_path.py" />
     <Compile Include="ppo_agent.py" />
     <Compile Include="train_arm.py">
       <SubType>Code</SubType>
