@@ -12,13 +12,19 @@ class PPOAgent():
                  graph,
                  max_iters=np.inf,
                  epochs=1,
-                 batch=4096,
+                 batch=1024,#4096,
                  actor_minibatch=256,
                  critic_minibatch=256,
                  actor_layer_sizes=[128, 64],
                  critic_layer_sizes=[128, 64],
                  activation=tf.nn.relu,
-                 init_norm_a_std=0.1):
+                 init_norm_a_std=0.1,
+                 discount=0.99,
+                 ratio_clip=0.2,
+                 actor_stepsize=0.0001,
+                 actor_momentum=0.9,
+                 critic_stepsize=0.001,
+                 critic_momentum=0.9):
 
         self._env = env
         self._sess = sess
@@ -30,10 +36,21 @@ class PPOAgent():
         self._actor_minibatch = actor_minibatch
         self._critic_minibatch = critic_minibatch
 
+        self._discount = discount
+        self._ratio_clip = ratio_clip
+
+        self._actor_stepsize = actor_stepsize
+        self._actor_momentum = actor_momentum
+        self._critic_stepsize = critic_stepsize
+        self._critic_momentum = critic_momentum
+
         with self._sess.as_default(), self._graph.as_default():
             self._build_normalizers()
             self._build_nets(actor_layer_sizes, critic_layer_sizes,
                              activation, init_norm_a_std)
+            self._build_losses()
+            self._build_solvers()
+
             self._initialize_vars()
 
         return
@@ -42,6 +59,8 @@ class PPOAgent():
         iter = 0
         while (iter < self._max_iters):
             paths = self._collect_batch()
+            update_info = self._update_step(paths)
+            self._log_info(update_info)
             iter += 1
 
         return
@@ -115,12 +134,41 @@ class PPOAgent():
                 sample_norm_a_tf = self._actor_pd_tf.sample()
                 self._sample_a_tf = self._unnormalize_a(sample_norm_a_tf)
                 self._sample_a_logp_tf = self._actor_pd_tf.log_prob(sample_norm_a_tf)
+                self._a_logp_tf = self._actor_pd_tf.log_prob(norm_a_tf)
 
             with tf.variable_scope(self.CRITIC_SCOPE):
                 self._critic_tf = self._build_net_critic(critic_inputs, critic_layer_sizes,
                                                          activation, reuse=False)
 
         return
+
+    def _build_losses(self):
+        val_diff = self._tar_val_tf - self._critic_tf
+        self._critic_loss_tf = 0.5 * tf.reduce_mean(tf.square(val_diff))
+
+        ratio_tf = tf.exp(self._a_logp_tf - self._old_logp_tf)
+        actor_loss0 = self._adv_tf * ratio_tf
+        actor_loss1 = self._adv_tf * tf.clip_by_value(ratio_tf, 1.0 - self._ratio_clip, 1 + self._ratio_clip)
+        self._actor_loss_tf = -tf.reduce_mean(tf.minimum(actor_loss0, actor_loss1))
+        
+        self._clip_frac_tf = tf.reduce_mean(tf.to_float(tf.greater(tf.abs(ratio_tf - 1.0), self._ratio_clip)))
+
+        return
+
+    def _build_solvers(self):
+        critic_vars = self._tf_vars(self.MAIN_SCOPE + "/" + self.CRITIC_SCOPE)
+        self._critic_opt = tf.train.MomentumOptimizer(learning_rate=self._critic_stepsize, momentum=self._critic_momentum)
+        self._update_critic_op = self._critic_opt.minimize(self._critic_loss_tf, var_list=critic_vars)
+
+        actor_vars = self._tf_vars(self.MAIN_SCOPE + "/" + self.ACTOR_SCOPE)
+        self._actor_opt = tf.train.MomentumOptimizer(learning_rate=self._actor_stepsize, momentum=self._actor_momentum)
+        self._update_actor_op = self._actor_opt.minimize(self._actor_loss_tf, var_list=actor_vars)
+
+        return
+
+    def _tf_vars(self, scope=''):
+        vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope)
+        return vars
 
     def _build_net_actor(self, input_tfs, a_size, layer_sizes, activation, init_std, reuse=False):
         h_weight_init = tf.contrib.layers.xavier_initializer()
@@ -224,3 +272,41 @@ class PPOAgent():
             curr_path.logps.append(logp)
 
         return curr_path
+
+    def _update_step(self, paths):
+        observations, actions, logps, rewards, last_step = self._flatten_paths(paths)
+        n = len(observations)
+
+        returns, adv = self._calc_returns_and_advantages(observations, rewards, last_step)
+
+        idx = np.array(list(range(n)))
+        for i in range(self._epochs):
+            np.random.shuffle(idx)
+
+            critic_minibatches = n // self._critic_minibatch
+            actor_minibatches = n // self._actor_minibatch
+
+        return
+
+    def _log_info(self, info):
+
+        return
+
+    def _flatten_paths(self, paths):
+        dummy_action = np.zeros(self.get_action_size())
+        dummy_logp = 0.0
+        dummy_reward = 0.0
+
+        observations = np.concatenate([p.observations for p in paths])
+        actions = np.concatenate([p.actions + [dummy_action] for p in paths])
+        logps = np.concatenate([p.logps + [dummy_logp] for p in paths])
+        rewards = np.concatenate([p.rewards + [dummy_reward] for p in paths])
+        last_step = np.concatenate([[0.0] * p.pathlength() + [1.0] for p in paths])
+
+        return observations, actions, logps, rewards, last_step
+
+    def _calc_returns_and_advantages(self, observations, rewards, last_step):
+        # hack
+        returns = np.zeros_like(rewards)
+        adv = np.zeros_like(adv)
+        return returns, adv
