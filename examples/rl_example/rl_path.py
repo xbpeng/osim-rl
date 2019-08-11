@@ -19,3 +19,6 @@ class RLPath():
             if type(vals) is list:
                 vals.clear()
         return
+
+    def calc_return(self):
+        return sum(self.rewards)

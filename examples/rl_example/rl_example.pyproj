@@ -26,8 +26,11 @@
     <InterpreterReference Include="Global|VisualStudio|opensim-rl" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="logger.py" />
+    <Compile Include="normalizer.py" />
     <Compile Include="rl_path.py" />
     <Compile Include="ppo_agent.py" />
+    <Compile Include="tf_normalizer.py" />
     <Compile Include="train_arm.py">
       <SubType>Code</SubType>
     </Compile>
